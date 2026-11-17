@@ -7,7 +7,7 @@
         <link rel="website" href="https://github.com/NH4Xnet/reaper-tools">GitHub / manual</link>
         <link rel="website" href="https://nh4x.bandcamp.com/">NH4X music</link>
       </metadata>
-      <version name="1.0" author="NH4X" time="2026-11-17T13:37:20Z">
+      <version name="1.0" author="NH4X" time="2026-11-17T13:38:35Z">
         <source main="main">https://github.com/NH4Xnet/reaper-tools/raw/envelope-shaper-1.0/Envelopes/NH4X%20Envelope%20shaper.lua</source>
         <changelog><![CDATA[First public release.]]></changelog>
       </version>

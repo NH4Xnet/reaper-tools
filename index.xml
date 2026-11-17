@@ -3,13 +3,17 @@
   <category name="Envelopes">
     <reapack name="NH4X Envelope shaper.lua" type="script" desc="NH4X Envelope shaper">
       <metadata>
-        <description><![CDATA[Panel with drag strips to reshape envelope points live. Needs ReaImGui (install it via ReaPack first). Manual: see the README on GitHub.]]></description>
+        <description><![CDATA[Panel with drag strips to reshape envelope points and MIDI editor lanes live. Needs ReaImGui (install it via ReaPack first). Manual: see the README on GitHub.]]></description>
         <link rel="website" href="https://github.com/NH4Xnet/reaper-tools">GitHub / manual</link>
         <link rel="website" href="https://nh4x.bandcamp.com/">NH4X music</link>
       </metadata>
       <version name="1.0" author="NH4X" time="2026-11-17T13:38:35Z">
         <source main="main">https://github.com/NH4Xnet/reaper-tools/raw/envelope-shaper-1.0/Envelopes/NH4X%20Envelope%20shaper.lua</source>
         <changelog><![CDATA[First public release.]]></changelog>
+      </version>
+      <version name="1.1" author="NH4X" time="2026-11-17T14:09:11Z">
+        <source main="main">https://github.com/NH4Xnet/reaper-tools/raw/envelope-shaper-1.1/Envelopes/NH4X%20Envelope%20shaper.lua</source>
+        <changelog><![CDATA[MIDI editor lanes: CC, pitch bend, channel pressure and velocity.]]></changelog>
       </version>
     </reapack>
   </category>

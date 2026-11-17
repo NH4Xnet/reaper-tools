@@ -1,18 +1,18 @@
 -- @description NH4X Envelope shaper
 -- @author NH4X
--- @version 1.0
+-- @version 1.1
 -- @about
---   Panel with drag strips to reshape envelope points while you watch: stretch, move, warp, rotate (time),
---   tilt, scale, move, warp, jitter (value), bend + point shapes, add / reduce points, generate shapes.
---   Target = razor area on the selected envelope, else its selected points, else a selected automation item.
+--   Panel with drag strips to reshape envelope points and MIDI editor lanes while you watch: stretch, move,
+--   warp, rotate (time), tilt, scale, move, warp, jitter (value), bend + point shapes, add / reduce points, generate.
+--   Envelopes: razor area on the selected envelope, else its selected points, else a selected automation item.
+--   MIDI editor: last clicked CC / pitch bend / channel pressure / velocity lane; selected events, else the time selection.
 --   Drag a strip left/right = live preview, release = one undo step, Esc = cancel, Shift = fine.
---   Track + take envelopes and automation items (not looped ones). Tempo map not supported.
 --   Toggle action: run again = close. Needs ReaImGui 0.10+ (install it via ReaPack first).
 --   Manual: https://github.com/NH4Xnet/reaper-tools
 --   Music: https://nh4x.bandcamp.com/
 
 local SCRIPT  = 'NH4X Envelope shaper'
-local VERSION = '1.0'
+local VERSION = '1.1'
 
 if not reaper.ImGui_GetBuiltinPath then
   reaper.MB('This script needs ReaImGui.\n\nExtensions > ReaPack > Browse packages >\n"ReaImGui: ReaScript binding for Dear ImGui"', SCRIPT, 0)
@@ -50,9 +50,10 @@ end
 local SPACING_QN = { 1, 0.5, 0.25, 0.125 }
 
 -- off = project time of the envelope's time 0 (take envelopes: item position; track lanes: 0)
-local function grid_times(t0, t1, off)
+-- gridqn = MIDI editor grid in quarter notes (MIDI lanes), else the project grid
+local function grid_times(t0, t1, off, gridqn)
   off = off or 0
-  local qn = SPACING_QN[cfg.spacing]
+  local qn = SPACING_QN[cfg.spacing] or gridqn
   if not qn then
     local _, div = reaper.GetSetProjectGrid(0, false)
     qn = div * 4
@@ -76,6 +77,9 @@ local GUARD = 0.001     -- guard points outside a razor area (s)
 local PAD   = 0.0021    -- rewrite window padding (s)
 
 local function clamp(x, a, b) if x < a then return a elseif x > b then return b end return x end
+
+-- copy of a point (MIDI points also carry their event ref, channel and mute flag)
+local function cp(p) return { t = p.t, v = p.v, s = p.s, ten = p.ten, sel = p.sel, ref = p.ref, ch = p.ch, mu = p.mu } end
 
 local function curve(x)
   x = clamp(x, 0, 1)
@@ -225,7 +229,320 @@ local function lerp_eval(pts, t)
 end
 
 ---------------------------------------------------------------- capture target
-local function capture()
+-- shared end of capture: sort, normalized values and x positions of the target points
+local function finish(E, work)
+  table.sort(work, function(a, b) return a.t < b.t end)
+  local span = E.t1 - E.t0
+  local ymin, ymax, n = 1e9, -1e9, 0
+  for _, p in ipairs(work) do
+    if p.tg then
+      n = n + 1
+      p.n = to_n(E, p.v)
+      p.x = span > 0 and (p.t - E.t0) / span or 0
+      p.r = math.random() * 2 - 1        -- fixed per drag, so the JITTER preview doesn't flicker
+      if p.n < ymin then ymin = p.n end
+      if p.n > ymax then ymax = p.n end
+    end
+  end
+  if n == 0 then ymin, ymax = 0.5, 0.5 end
+  E.work, E.count, E.ymin, E.ymax = work, n, ymin, ymax
+  E.wlo, E.whi = E.t0 - PAD, E.t1 + PAD
+  return E
+end
+
+---------------------------------------------------------------- MIDI editor lanes (CC, pitch bend, channel pressure, velocity)
+-- shapes: envelope 0 = linear, 1 = square; MIDI CC 0 = square, 1 = linear; 2..5 are the same
+local function cc_shape(s) if s == 0 then return 1 elseif s == 1 then return 0 end return s or 1 end
+local function env_shape(c) if c == 0 then return 1 elseif c == 1 then return 0 end return c end
+
+local LANE_KIND = { [0x200] = 'vel', [0x201] = 'pb', [0x203] = 'cp' }
+local KIND_NAME = { vel = 'Velocity', pb = 'Pitch bend', cp = 'Channel pressure' }
+
+-- active MIDI editor + its last clicked lane
+local function midi_lane()
+  local ed = reaper.MIDIEditor_GetActive()
+  if not ed then return nil, 'No MIDI editor open.' end
+  local take = reaper.MIDIEditor_GetTake(ed)
+  if not take or not reaper.ValidatePtr(take, 'MediaItem_Take*') then return nil, 'The MIDI editor shows no take.' end
+  local lane = reaper.MIDIEditor_GetSetting_int(ed, 'last_clicked_cc_lane')
+  local M = { ed = ed, take = take, lane = lane }
+  if lane >= 0 and lane <= 127 then
+    M.kind, M.name = 'cc', 'CC' .. lane
+  elseif LANE_KIND[lane] then
+    M.kind = LANE_KIND[lane]; M.name = KIND_NAME[M.kind]
+  elseif lane < 0 then
+    return nil, 'Click a CC, pitch bend or velocity lane in the MIDI editor.'
+  else
+    return nil, 'Lane not supported: use velocity, pitch bend, channel pressure or CC 0-127 (no 14-bit).'
+  end
+  return M
+end
+
+-- raw take events; a CC's bezier tension event (CCBZ) is kept with its CC. Last unit = end-of-source marker.
+local function midi_parse(take)
+  local _, buf = reaper.MIDI_GetAllEvts(take, '')
+  local units, pos, ppq, n = {}, 1, 0, #buf
+  while pos <= n - 8 do
+    local off, flags, msg, np = string.unpack('i4Bs4', buf, pos)
+    pos = np
+    ppq = ppq + off
+    local last = units[#units]
+    if last and msg:byte(1) == 0xFF and msg:sub(3, 7) == 'CCBZ ' and last.ppq == ppq and not last.bez then
+      last.bez = { flags = flags, msg = msg }
+    else
+      units[#units + 1] = { ppq = ppq, flags = flags, msg = msg }
+    end
+  end
+  return units, buf
+end
+
+-- value + channel of a unit when it belongs to the lane
+local function lane_value(kind, lane, u)
+  local m = u.msg
+  local b1 = m:byte(1)
+  if not b1 then return end
+  local st, ch = b1 & 0xF0, b1 & 0x0F
+  if kind == 'cc' and st == 0xB0 and #m >= 3 and m:byte(2) == lane then return m:byte(3), ch
+  elseif kind == 'pb' and st == 0xE0 and #m >= 3 then return m:byte(2) + m:byte(3) * 128, ch
+  elseif kind == 'cp' and st == 0xD0 and #m >= 2 then return m:byte(2), ch
+  elseif kind == 'vel' and st == 0x90 and #m >= 3 and m:byte(3) > 0 then return m:byte(3), ch
+  end
+end
+
+local function lane_msg(E, ch, v)
+  v = math.floor(v + 0.5)
+  if E.kind == 'pb' then
+    v = clamp(v, 0, 16383)
+    return string.char(0xE0 | ch, v & 127, v >> 7)
+  elseif E.kind == 'cp' then
+    return string.char(0xD0 | ch, clamp(v, 0, 127))
+  end
+  return string.char(0xB0 | ch, E.lane, clamp(v, 0, 127))
+end
+
+local function capture_midi()
+  local M, err = midi_lane()
+  if not M then return nil, err end
+  local take = M.take
+  local units, raw = midi_parse(take)
+  if #units == 0 then return nil, 'The take has no MIDI data.' end
+  local E = { midi = true, take = take, ed = M.ed, item = reaper.GetMediaItemTake_Item(take), kind = M.kind,
+              lane = M.lane, name = M.name, lin = true, mode = 0, toff = 0, ai = -1, units = units, raw = raw,
+              dmin = 0, dmax = (M.kind == 'pb') and 16383 or 127, lanemark = {}, lanet = {} }
+  if M.kind == 'vel' then E.dmin, E.vel = 1, true end
+  E.gridqn = reaper.MIDI_GetGrid(take)
+  local ts0, ts1 = reaper.GetSet_LoopTimeRange(false, false, 0, 0, false)
+  local hasts = ts1 > ts0 + 1e-6
+
+  local all, selch, nsel = {}, {}, 0
+  for i = 1, #units - 1 do
+    local u = units[i]
+    local v, ch = lane_value(M.kind, M.lane, u)
+    if v then
+      local p = { t = reaper.MIDI_GetProjTimeFromPPQPos(take, u.ppq), v = v, s = 0, ten = 0,
+                  sel = (u.flags & 1) ~= 0, mu = (u.flags & 2) ~= 0, ch = ch, ref = i }
+      if not E.vel then
+        p.s = env_shape((u.flags >> 4) & 7)
+        if u.bez and #u.bez.msg >= 12 then p.ten = string.unpack('f', u.bez.msg, 9) end
+      end
+      all[#all + 1] = p
+      if p.sel then nsel = nsel + 1; selch[ch] = true end
+    end
+  end
+  local what = E.vel and 'notes' or 'events'
+  if nsel == 0 and not hasts then return nil, 'Select ' .. what .. ' in this lane or make a time selection.' end
+  E.sel_mode = nsel > 0
+
+  if E.vel then   -- velocity: values only, notes never move
+    local work = {}
+    for _, p in ipairs(all) do
+      if (nsel > 0 and p.sel) or (nsel == 0 and p.t >= ts0 - EPS and p.t < ts1 - EPS) then
+        p.tg = true
+        work[#work + 1] = p
+      end
+    end
+    if #work == 0 then return nil, 'No notes in the time selection.' end
+    table.sort(work, function(a, b) return a.t < b.t end)
+    local f, l = work[1].t, work[#work].t
+    local groups, lastt = 0, nil
+    for _, p in ipairs(work) do
+      if not lastt or p.t - lastt > 1e-4 then groups = groups + 1; lastt = p.t end
+    end
+    E.vfirst, E.vlast, E.groups = f, l, groups
+    if nsel > 0 then
+      E.t0, E.t1 = f, l
+      E.cyc1 = groups > 1 and (l + (l - f) / (groups - 1)) or l   -- cycles span one step past the last note
+    else
+      E.t0, E.t1, E.cyc1 = ts0, ts1, ts1
+    end
+    E.orig = {}
+    return finish(E, work)
+  end
+
+  -- CC / pitch bend / pressure: one channel
+  local ch
+  if nsel > 0 then
+    local n = 0
+    for c in pairs(selch) do n = n + 1; ch = c end
+    if n > 1 then return nil, 'Selected events sit on several MIDI channels: select one channel.' end
+  else
+    local seen, n = {}, 0
+    for _, p in ipairs(all) do
+      if p.t >= ts0 - EPS and p.t <= ts1 + EPS and not seen[p.ch] then seen[p.ch] = true; n = n + 1; ch = p.ch end
+    end
+    if n ~= 1 then ch = reaper.MIDIEditor_GetSetting_int(M.ed, 'default_note_chan') end
+  end
+  E.ch = clamp(ch or 0, 0, 15)
+  local work, orig = {}, {}
+  for _, p in ipairs(all) do
+    if p.ch == E.ch then
+      work[#work + 1] = p
+      E.lanemark[p.ref], E.lanet[p.ref] = true, p.t
+    end
+  end
+  table.sort(work, function(a, b) return a.t < b.t end)
+  for i, p in ipairs(work) do orig[i] = cp(p) end
+  E.orig = orig
+  E.eval = function(t) return lerp_eval(orig, t) end
+
+  if nsel > 0 then
+    local t0, t1
+    for _, p in ipairs(work) do
+      p.tg = p.sel
+      if p.sel then
+        if not t0 or p.t < t0 then t0 = p.t end
+        if not t1 or p.t > t1 then t1 = p.t end
+      end
+    end
+    E.t0, E.t1 = t0, t1
+  else
+    E.razor = { timesel = true }
+    for _, p in ipairs(work) do p.tg = (p.t >= ts0 - EPS and p.t <= ts1 + EPS) end
+    -- edge events on the current line (only where a CC already sets the value), so the outside stays put
+    local function edge(t)
+      local prev
+      for _, o in ipairs(orig) do
+        if math.abs(o.t - t) < 1e-4 then return end
+        if o.t < t then prev = o end
+      end
+      if not prev then return end
+      work[#work + 1] = { t = t, v = E.eval(t), s = prev.s, ten = prev.ten, sel = false, ch = E.ch, tg = true }
+    end
+    edge(ts0); edge(ts1)
+    E.t0, E.t1 = ts0, ts1
+  end
+  return finish(E, work)
+end
+
+-- rebuild the take from the captured events: lane events in the write window replaced by pts
+local function write_midi(E, pts)
+  local take, units = E.take, E.units
+  if pts == E.orig then
+    reaper.MIDI_SetAllEvts(take, E.raw)
+  else
+    local tail = units[#units]
+    local list = {}
+    if E.vel then
+      local nv = {}
+      for _, p in ipairs(pts) do if p.ref then nv[p.ref] = clamp(math.floor(p.v + 0.5), 1, 127) end end
+      for i = 1, #units - 1 do
+        local u = units[i]
+        if nv[i] then
+          list[#list + 1] = { ppq = u.ppq, flags = u.flags, msg = u.msg:sub(1, 2) .. string.char(nv[i]) .. u.msg:sub(4), bez = u.bez }
+        else
+          list[#list + 1] = u
+        end
+      end
+    else
+      local lo, hi = E.wlo, E.whi
+      local keep = {}
+      for i = 1, #units - 1 do
+        local t = E.lanemark[i] and E.lanet[i]
+        if not (t and t >= lo and t < hi) then keep[#keep + 1] = { u = units[i], o = i } end
+      end
+      local new, at = {}, {}
+      for _, p in ipairs(pts) do
+        if p.t >= lo and p.t < hi then
+          local ppq = math.floor(reaper.MIDI_GetPPQPosFromProjTime(take, p.t) + 0.5)
+          if ppq > tail.ppq then ppq = tail.ppq end
+          local c = cc_shape(p.s)
+          local u = { ppq = ppq, flags = (p.sel and 1 or 0) | (p.mu and 2 or 0) | (c << 4), msg = lane_msg(E, p.ch or E.ch, p.v) }
+          if c == 5 then u.bez = { flags = 0, msg = '\xFF\x0FCCBZ \0' .. string.pack('f', p.ten or 0) } end
+          if at[ppq] then new[at[ppq]].u = u   -- two events on one tick: the later one wins
+          else
+            new[#new + 1] = { u = u, o = #units + #new + 1 }
+            at[ppq] = #new
+          end
+        end
+      end
+      for _, x in ipairs(new) do keep[#keep + 1] = x end
+      table.sort(keep, function(a, b)
+        if a.u.ppq ~= b.u.ppq then return a.u.ppq < b.u.ppq end
+        return a.o < b.o
+      end)
+      for i, x in ipairs(keep) do list[i] = x.u end
+    end
+    local parts, prev = {}, 0
+    local function put(u)
+      parts[#parts + 1] = string.pack('i4Bs4', u.ppq - prev, u.flags, u.msg)
+      prev = u.ppq
+      if u.bez then parts[#parts + 1] = string.pack('i4Bs4', 0, u.bez.flags, u.bez.msg) end
+    end
+    for _, u in ipairs(list) do put(u) end
+    put(tail)
+    reaper.MIDI_SetAllEvts(take, table.concat(parts))
+  end
+  reaper.MIDI_Sort(take)
+  reaper.UpdateArrange()
+end
+
+---------------------------------------------------------------- source: envelope lane or MIDI editor lane
+-- follows what you touched last (selected envelope / razor / points vs. MIDI lane / events); the switch forces it
+local src = 'env'
+local sig_e, sig_m
+local rebase = false   -- set after our own writes, so they don't flip the source
+
+local function sig_env()
+  local env = reaper.GetSelectedEnvelope(0)
+  if not env then return '' end
+  local tr = reaper.Envelope_GetParentTrack(env)
+  local rz, ok = ''
+  if tr then ok, rz = reaper.GetSetMediaTrackInfo_String(tr, 'P_RAZOREDITS', '', false) end
+  local n = 0
+  for ai = -1, reaper.CountAutomationItems(env) - 1 do
+    for i = 0, reaper.CountEnvelopePointsEx(env, ai) - 1 do
+      local _, _, _, _, _, s = reaper.GetEnvelopePointEx(env, ai, i)
+      if s then n = n + 1 end
+    end
+  end
+  return tostring(env) .. '|' .. rz .. '|' .. n
+end
+
+local function sig_midi()
+  local ed = reaper.MIDIEditor_GetActive()
+  if not ed then return '' end
+  local take = reaper.MIDIEditor_GetTake(ed)
+  if not take or not reaper.ValidatePtr(take, 'MediaItem_Take*') then return '' end
+  local _, h = reaper.MIDI_GetHash(take, false, '')
+  return tostring(take) .. '|' .. reaper.MIDIEditor_GetSetting_int(ed, 'last_clicked_cc_lane') .. '|' .. h
+         .. '|' .. reaper.MIDI_EnumSelCC(take, -1) .. '|' .. reaper.MIDI_EnumSelNotes(take, -1)
+end
+
+local function update_source()
+  local se, sm = sig_env(), sig_midi()
+  if sig_e == nil then
+    src = (se == '' and sm ~= '') and 'midi' or 'env'
+  elseif not rebase then
+    if sm ~= sig_m and sm ~= '' then src = 'midi'
+    elseif se ~= sig_e and se ~= '' then src = 'env' end
+  end
+  -- the current source is gone (MIDI editor closed / no envelope) but the other one exists: switch
+  if src == 'midi' and sm == '' and se ~= '' then src = 'env'
+  elseif src == 'env' and se == '' and sm ~= '' then src = 'midi' end
+  sig_e, sig_m, rebase = se, sm, false
+end
+
+local function capture_env()
   local env = reaper.GetSelectedEnvelope(0)
   if not env then return nil, 'Click an envelope lane first.' end
   local E = env_info(env)
@@ -290,24 +607,13 @@ local function capture()
     if not t0 then return nil, 'Select envelope points or draw a razor area on the envelope.' end
     E.t0, E.t1 = t0, t1
   end
-  table.sort(work, function(a, b) return a.t < b.t end)
+  return finish(E, work)
+end
 
-  local span = E.t1 - E.t0
-  local ymin, ymax, n = 1e9, -1e9, 0
-  for _, p in ipairs(work) do
-    if p.tg then
-      n = n + 1
-      p.n = to_n(E, p.v)
-      p.x = span > 0 and (p.t - E.t0) / span or 0
-      p.r = math.random() * 2 - 1        -- fixed per drag, so the JITTER preview doesn't flicker
-      if p.n < ymin then ymin = p.n end
-      if p.n > ymax then ymax = p.n end
-    end
-  end
-  if n == 0 then ymin, ymax = 0.5, 0.5 end
-  E.work, E.count, E.ymin, E.ymax = work, n, ymin, ymax
-  E.wlo, E.whi = E.t0 - PAD, E.t1 + PAD
-  return E
+local function capture()
+  update_source()
+  if src == 'midi' then return capture_midi() end
+  return capture_env()
 end
 
 ---------------------------------------------------------------- operations
@@ -340,11 +646,11 @@ local function generate(E)
   local res = {}
   for _, p in ipairs(E.work) do   -- keep everything outside the target span
     if not p.tg and not (p.t > t0 - EPS and p.t < t1 + EPS) then
-      res[#res + 1] = { t = p.t, v = p.v, s = p.s, ten = p.ten, sel = p.sel }
+      res[#res + 1] = cp(p)
     end
   end
   local sel = not E.razor
-  local function add(t, n, s) res[#res + 1] = { t = t, v = from_n(E, n), s = s or 0, ten = 0, sel = sel } end
+  local function add(t, n, s) res[#res + 1] = { t = t, v = from_n(E, n), s = s or 0, ten = 0, sel = sel, ch = E.ch } end
 
   local g, c = cfg.gen, math.max(1, cfg.cycles)
   if g == 0 then add(t0, lo); add(t1, hi)                       -- ramp up
@@ -368,11 +674,76 @@ local function generate(E)
   else                                                          -- random steps / smooth (spacing = POINTS menu)
     local s = (g == 9) and 1 or 2
     add(t0, lo + math.random() * (hi - lo), s)
-    for _, t in ipairs(grid_times(t0, t1, E.toff)) do add(t, lo + math.random() * (hi - lo), s) end
+    for _, t in ipairs(grid_times(t0, t1, E.toff, E.gridqn)) do add(t, lo + math.random() * (hi - lo), s) end
     add(t1, lo + math.random() * (hi - lo), s)
   end
   return res, GEN_NAMES[g], t0, t1
 end
+
+-- velocity GENERATE: the shape read at each note (chords = one step); ramps run first to last note,
+-- cycles run over the time selection (selected notes: up to one step past the last note)
+local function gen_vel(E)
+  local lo, hi = clamp(cfg.lo, 0, 100) / 100, clamp(cfg.hi, 0, 100) / 100
+  local g, c = cfg.gen, math.max(1, cfg.cycles)
+  -- a wave needs 2+ notes per cycle, else every note hits the same spot of its cycle (aliasing)
+  local cmax, note = math.max(1, (E.groups or 2) // 2), ''
+  if g >= 4 and g <= 8 and c > cmax then
+    c, note = cmax, string.format(' (cycles capped at %d: 2 notes per cycle minimum)', cmax)
+  end
+  local f, l = E.vfirst, E.vlast
+  local c0, c1 = E.t0, E.cyc1 or E.t1
+  local res, rnd, lastt = {}, 0, nil
+  for _, p in ipairs(E.work) do
+    local xr = (l > f) and (p.t - f) / (l - f) or 0
+    local ph = ((c1 > c0) and (p.t - c0) / (c1 - c0) * c or 0) % 1
+    local y
+    if g == 0 then y = xr
+    elseif g == 1 then y = 1 - xr
+    elseif g == 2 then y = xr * xr
+    elseif g == 3 then y = (1 - xr) ^ 2
+    elseif g == 4 then y = 0.5 - 0.5 * math.cos(2 * math.pi * ph)
+    elseif g == 5 then y = ph < 0.5 and ph * 2 or 2 - ph * 2
+    elseif g == 6 then y = ph
+    elseif g == 7 then y = 1 - ph
+    elseif g == 8 then y = ph < 0.5 and 0 or 1
+    else
+      if not lastt or p.t - lastt > 1e-4 then rnd = math.random() end
+      y = rnd
+    end
+    lastt = p.t
+    local q = cp(p)
+    q.v = from_n(E, lo + (hi - lo) * y)
+    res[#res + 1] = q
+  end
+  return res, GEN_NAMES[g] .. note, E.t0, E.t1
+end
+
+-- velocity ROTATE: the velocity pattern shifts by whole notes (chords move together), notes stay put
+local function rotate_vel(E, a)
+  local groups, lastt = {}, nil
+  for _, p in ipairs(E.work) do
+    if not lastt or p.t - lastt > 1e-4 then groups[#groups + 1] = {} end
+    local grp = groups[#groups]
+    grp[#grp + 1] = p
+    lastt = p.t
+  end
+  local K = #groups
+  local k = math.floor(a * K + 0.5)
+  local res = {}
+  for i, grp in ipairs(groups) do
+    local from = groups[((i - 1 - k) % K) + 1]
+    for j, p in ipairs(grp) do
+      local q = cp(p)
+      q.v = (from[j] or from[1]).v
+      res[#res + 1] = q
+    end
+  end
+  return res, string.format('%+d notes', k), E.t0, E.t1
+end
+
+-- what works on the velocity lane (time ops would move notes: greyed out)
+local VEL_OK = { tiltL = true, tiltR = true, scaleT = true, scaleB = true, comp = true, movev = true,
+                 warpv = true, flip = true, jitter = true, gen = true, rotate = true }
 
 -- Ramer-Douglas-Peucker on value error: keeps the points that bend the line by more than tol
 local function rdp(pts, i, j, tol, keep)
@@ -400,7 +771,7 @@ local function rotate(E, a)
   local P = t1 - t0
   local res = {}
   if P <= 0 then   -- single point: nothing to rotate
-    for _, p in ipairs(E.work) do res[#res + 1] = { t = p.t, v = p.v, s = p.s, ten = p.ten, sel = p.sel } end
+    for _, p in ipairs(E.work) do res[#res + 1] = cp(p) end
     return res, 'needs 2+ points', t0, t1
   end
   -- the loop = all target points except the end point (the end is the start again);
@@ -410,11 +781,11 @@ local function rotate(E, a)
     if p.tg then
       if p.t < t1 - 1e-4 then loop[#loop + 1] = p end
     else
-      res[#res + 1] = { t = p.t, v = p.v, s = p.s, ten = p.ten, sel = p.sel }
+      res[#res + 1] = cp(p)
     end
   end
   if #loop == 0 then
-    for _, p in ipairs(E.work) do res[#res + 1] = { t = p.t, v = p.v, s = p.s, ten = p.ten, sel = p.sel } end
+    for _, p in ipairs(E.work) do res[#res + 1] = cp(p) end
     return res, 'needs 2+ points', t0, t1
   end
 
@@ -433,12 +804,15 @@ local function rotate(E, a)
   for _, p in ipairs(loop) do
     local nt = t0 + ((p.t - t0 + d) % P)
     if math.abs(nt - t1) < 1e-6 then nt = t0 end
-    local q = { t = nt, v = p.v, s = p.s, ten = p.ten, sel = p.sel }
+    local q = cp(p)
+    q.t = nt
     res[#res + 1] = q
     if math.abs(nt - t0) < 1e-6 then head = q end
   end
   if head then   -- close the loop: the end point repeats the start point
-    res[#res + 1] = { t = t1, v = head.v, s = head.s, ten = head.ten, sel = head.sel }
+    local q = cp(head)
+    q.t, q.ref = t1, nil
+    res[#res + 1] = q
   end
 
   local off = E.toff or 0
@@ -447,6 +821,15 @@ local function rotate(E, a)
 end
 
 local function apply(E, op, a)
+  if E.vel then
+    if op == 'gen' then return gen_vel(E) end
+    if op == 'rotate' then return rotate_vel(E, a) end
+    if not VEL_OK[op] then
+      local res = {}
+      for _, p in ipairs(E.work) do res[#res + 1] = cp(p) end
+      return res, 'not on velocity', E.t0, E.t1
+    end
+  end
   if op == 'gen' then return generate(E) end
   if op == 'rotate' then return rotate(E, a) end
   local t0, t1 = E.t0, E.t1
@@ -455,7 +838,14 @@ local function apply(E, op, a)
   local tf, vf, label
   local snap = cfg.snap
   local off = E.toff or 0
-  local function snapt(t) return reaper.SnapToGrid(0, t + off) - off end
+  local function snapt(t)
+    local g = E.gridqn
+    if g and g > 0 then   -- MIDI lanes snap to the MIDI editor grid
+      local q = reaper.TimeMap2_timeToQN(0, t)
+      return reaper.TimeMap2_QNToTime(0, math.floor(q / g + 0.5) * g)
+    end
+    return reaper.SnapToGrid(0, t + off) - off
+  end
   -- automation items: time moves stay inside the item (no points piled up on its edge)
   local blo = E.A and E.A.pos or -math.huge
   local bhi = E.A and (E.A.pos + E.A.len) or math.huge
@@ -538,13 +928,13 @@ local function apply(E, op, a)
   local res, tg = {}, {}
   for _, p in ipairs(E.work) do
     if p.tg then
-      local q = { t = p.t, v = p.v, s = p.s, ten = p.ten, sel = p.sel }
+      local q = cp(p)
       if tf then q.t = tf(p); if E.A then q.t = clamp(q.t, E.A.pos, E.A.pos + E.A.len) end end
       if vf then q.v = from_n(E, vf(p)) end
       res[#res + 1] = q
       tg[#tg + 1] = q
     elseif not (DROP[op] and p.t > lo - EPS and p.t < hi + EPS) then
-      res[#res + 1] = { t = p.t, v = p.v, s = p.s, ten = p.ten, sel = p.sel }
+      res[#res + 1] = cp(p)
     end
   end
 
@@ -560,14 +950,14 @@ local function apply(E, op, a)
   if op == 'addpts' then
     -- new points sit exactly on the current line, so nothing changes until you shape them
     local added = 0
-    for _, t in ipairs(grid_times(t0, t1, E.toff)) do
+    for _, t in ipairs(grid_times(t0, t1, E.toff, E.gridqn)) do
       local clash = false
       for _, q in ipairs(res) do
         if math.abs(q.t - t) < 1e-3 then clash = true; break end
       end
-      if not clash then
-        local v = E.eval(t)
-        res[#res + 1] = { t = t, v = v, s = 0, ten = 0, sel = true }
+      local v = not clash and E.eval(t)
+      if v then
+        res[#res + 1] = { t = t, v = v, s = 0, ten = 0, sel = true, ch = E.ch }
         added = added + 1
       end
     end
@@ -619,6 +1009,8 @@ end
 
 ---------------------------------------------------------------- write
 local function write(E, pts)
+  rebase = true   -- our own change: don't let it flip the ENVELOPE / MIDI source
+  if E.midi then return write_midi(E, pts) end
   local lo, hi = E.wlo, E.whi
   reaper.PreventUIRefresh(1)
   reaper.DeleteEnvelopePointRangeEx(E.env, E.ai, lo, hi)
@@ -650,10 +1042,19 @@ end
 local status, status_err = '', false
 
 local function commit(E, op, res, label, lo, hi)
+  local undo = 'Envelope shaper: ' .. NAMES[op] .. (label ~= '' and (' ' .. label) or '')
+  if E.midi then
+    write(E, res)
+    -- time selection follows a stretch/move, like the razor area on envelopes
+    if E.razor and (lo ~= E.t0 or hi ~= E.t1) then reaper.GetSet_LoopTimeRange(true, false, lo, hi, false) end
+    reaper.Undo_OnStateChange_Item(0, undo, E.item)
+    status, status_err = NAMES[op] .. (label ~= '' and (': ' .. label) or '') .. '  (' .. E.name .. ')', false
+    return
+  end
   reaper.Undo_BeginBlock2(0)
   write(E, res)
   if E.razor and (lo ~= E.t0 or hi ~= E.t1) then set_razor(E, lo, hi) end
-  reaper.Undo_EndBlock2(0, 'Envelope shaper: ' .. NAMES[op] .. (label ~= '' and (' ' .. label) or ''), -1)
+  reaper.Undo_EndBlock2(0, undo, -1)
   status, status_err = NAMES[op] .. (label ~= '' and (': ' .. label) or '') .. '  (' .. E.name .. ')', false
 end
 
@@ -668,6 +1069,16 @@ end
 
 -- unselect every point on the selected lane's track (all its envelopes + automation items), one undo step
 local function deselect_all()
+  if src == 'midi' then   -- MIDI: unselect every event in the take
+    local M, err = midi_lane()
+    if not M then status, status_err = err, true; return end
+    reaper.MIDI_SelectAll(M.take, false)
+    rebase = true
+    reaper.Undo_OnStateChange_Item(0, 'Envelope shaper: Deselect events', reaper.GetMediaItemTake_Item(M.take))
+    reaper.UpdateArrange()
+    status, status_err = 'All events in the take unselected.', false
+    return
+  end
   local env = reaper.GetSelectedEnvelope(0)
   if not env then status, status_err = 'Click an envelope lane first.', true; return end
   local envs = { env }
@@ -697,6 +1108,7 @@ local function deselect_all()
 end
 
 ---------------------------------------------------------------- target line (refreshed a few times per second)
+local drag = nil   -- running strip drag: { op, E, a, raw, mx, res, label, lo, hi, cancelled, dead }
 local target_txt, target_ok, target_next = '', false, 0
 local target_vol = nil   -- env info when the selected lane is a volume lane (GENERATE shows dB)
 
@@ -714,7 +1126,19 @@ local function fx_text(F, n)
   if ok and buf and buf ~= '' then return buf end
 end
 
+local target_midi = nil  -- { kind, dmin, dmax } when the source is a MIDI lane (Low/High show MIDI values)
+
+local function midi_level(pct)
+  local M = target_midi
+  return math.floor(M.dmin + clamp(pct, 0, 100) / 100 * (M.dmax - M.dmin) + 0.5)
+end
+
 local function level_fmt(prefix, pct)
+  if target_midi then
+    local v = midi_level(pct)
+    if target_midi.kind == 'pb' then return string.format('%s %+d', prefix, v - 8192) end
+    return string.format('%s %d', prefix, v)
+  end
   if target_fx then
     local txt = fx_text(target_fx, clamp(pct, 0, 100) / 100)
     if txt then return prefix .. ' ' .. (txt:gsub('%%', '%%%%')) end
@@ -732,6 +1156,32 @@ local function refresh_target()
   local now = reaper.time_precise()
   if now < target_next then return end
   target_next = now + 0.3
+  if not drag then update_source() end
+  target_midi = nil
+  if src == 'midi' then
+    target_vol, target_fx = nil, nil
+    local M, err = midi_lane()
+    if not M then target_txt, target_ok = 'MIDI editor\n' .. err, false; return end
+    target_midi = { kind = M.kind, dmin = (M.kind == 'vel') and 1 or 0, dmax = (M.kind == 'pb') and 16383 or 127 }
+    local _, tn = reaper.GetTrackName(reaper.GetMediaItemTake_Track(M.take))
+    local tk = reaper.GetTakeName(M.take)
+    local head = tn .. ' / ' .. (tk ~= '' and (tk .. ' / ') or '') .. M.name
+    local E, e2 = capture_midi()
+    if not E then target_txt, target_ok = head .. '\n' .. e2, false; return end
+    local n = 0
+    for _, p in ipairs(E.work) do if p.tg and p.ref then n = n + 1 end end
+    local unit = E.vel and 'note' or 'event'
+    local what
+    if E.sel_mode then
+      what = string.format('%d selected %s%s', n, unit, n == 1 and '' or 's')
+    else
+      local ts0, ts1 = reaper.GetSet_LoopTimeRange(false, false, 0, 0, false)
+      what = string.format('Time selection %.3f - %.3f s: %d %s%s', ts0, ts1, n, unit, n == 1 and '' or 's')
+    end
+    if not E.vel then what = what .. string.format('  |  ch %d', E.ch + 1) end
+    target_txt, target_ok = head .. '\n' .. what, true
+    return
+  end
   local env = reaper.GetSelectedEnvelope(0)
   if not env then
     target_txt, target_ok, target_vol, target_fx = 'No envelope selected: click an envelope lane.', false, nil, nil
@@ -783,6 +1233,10 @@ end
 
 -- Low/High sliders: whole dB on volume lanes, whole % on % lanes, free on plugin units
 local function detent_level(pct)
+  if target_midi then   -- whole MIDI values
+    local M = target_midi
+    return clamp((midi_level(pct) - M.dmin) / (M.dmax - M.dmin) * 100, 0, 100)
+  end
   if ImGui.IsKeyDown(ctx, ImGui.Mod_Shift) or target_fx then return pct end
   local E = target_vol
   if not E then return round_to(pct, 1) end
@@ -796,7 +1250,6 @@ local function detent_level(pct)
 end
 
 ---------------------------------------------------------------- drag strips
-local drag = nil   -- { op, E, a, raw, mx, res, label, lo, hi, cancelled, dead }
 
 local COL = {
   bg     = 0x24272BFF, bg_hov = 0x2E3237FF, border = 0x4A5058FF,
@@ -862,19 +1315,24 @@ local function strip(op, label, tip)
     drag = nil
   end
 
-  -- draw
+  -- draw (greyed out inside BeginDisabled: style alpha is lowered there)
+  local k = ImGui.GetStyleVar(ctx, ImGui.StyleVar_Alpha) or 1
+  local function fade(c)
+    if k >= 1 then return c end
+    return (c & ~0xFF) | math.floor((c & 0xFF) * k)
+  end
   local dl = ImGui.GetWindowDrawList(ctx)
   local cx = (x1 + x2) * 0.5
-  ImGui.DrawList_AddRectFilled(dl, x1, y1, x2, y2, (hovered or active) and COL.bg_hov or COL.bg, 3)
+  ImGui.DrawList_AddRectFilled(dl, x1, y1, x2, y2, fade((hovered or active) and COL.bg_hov or COL.bg), 3)
   local a = (mine and drag and drag.E and not drag.cancelled) and drag.a or 0
   if a ~= 0 then
     local fx = cx + a * (x2 - x1) * 0.5
     ImGui.DrawList_AddRectFilled(dl, math.min(cx, fx), y1 + 3, math.max(cx, fx), y2 - 3, COL.fill, 2)
   end
-  ImGui.DrawList_AddLine(dl, cx, y1 + 2, cx, y2 - 2, COL.center, 1)
-  ImGui.DrawList_AddRect(dl, x1, y1, x2, y2, COL.border, 3)
+  ImGui.DrawList_AddLine(dl, cx, y1 + 2, cx, y2 - 2, fade(COL.center), 1)
+  ImGui.DrawList_AddRect(dl, x1, y1, x2, y2, fade(COL.border), 3)
   local _, th = ImGui.CalcTextSize(ctx, label)
-  ImGui.DrawList_AddText(dl, x1 + 8, y1 + (h - th) * 0.5, COL.text, label)
+  ImGui.DrawList_AddText(dl, x1 + 8, y1 + (h - th) * 0.5, fade(COL.text), label)
   if a ~= 0 and drag.label then
     local vw = ImGui.CalcTextSize(ctx, drag.label)
     ImGui.DrawList_AddText(dl, x2 - vw - 8, y1 + (h - th) * 0.5, COL.value, drag.label)
@@ -913,7 +1371,24 @@ end
 local function panel()
   refresh_target()
   ImGui.SeparatorText(ctx, 'TARGET')
+  -- source switch: lights what is edited; follows your last click, click here to force it
+  for i, s in ipairs({ { 'env', 'ENVELOPE' }, { 'midi', 'MIDI EDITOR' } }) do
+    local on = (src == s[1])
+    if on then
+      ImGui.PushStyleColor(ctx, ImGui.Col_Button, COL.sw_on)
+      ImGui.PushStyleColor(ctx, ImGui.Col_ButtonHovered, COL.sw_on)
+      ImGui.PushStyleColor(ctx, ImGui.Col_Text, COL.sw_txt)
+    end
+    if ImGui.Button(ctx, s[2] .. '##src', SW_W, 24) and not drag then
+      src, rebase, target_next = s[1], true, 0
+    end
+    if on then ImGui.PopStyleColor(ctx, 3) end
+    ImGui.SameLine(ctx, 0, i == 1 and 2 or 8)
+  end
+  ImGui.AlignTextToFramePadding(ctx)
+  ImGui.TextDisabled(ctx, 'follows your last click')
   ImGui.TextColored(ctx, target_ok and COL.ok or COL.err, target_txt)
+  local isvel = target_midi and target_midi.kind == 'vel'   -- velocity: notes never move
 
   local rv
   if not ImGui.BeginTable(ctx, '##cols', 3, ImGui.TableFlags_BordersInnerV) then return end
@@ -922,14 +1397,18 @@ local function panel()
   -- column 1 ------------------------------------------------------------
   ImGui.TableNextColumn(ctx)
   ImGui.SeparatorText(ctx, 'TIME')
+  if isvel then ImGui.BeginDisabled(ctx) end
   switch('st', 'stretch_side', { 'L', 'R' }, { 'Left edge moves, right edge stays.', 'Right edge moves, left edge stays.' })
   strip(cfg.stretch_side == 0 and 'stretchL' or 'stretchR', 'STRETCH', 'Squeeze/expand in time.')
   no_switch()
   strip('movet', 'MOVE', 'Shift all target points in time.')
   no_switch()
   strip('warpt', 'WARP', 'Bunch the points towards the start or end. Edges stay.')
+  if isvel then ImGui.EndDisabled(ctx) end
   no_switch()
-  strip('rotate', 'ROTATE', 'Slide the pattern inside the area in steps of its own points; what falls off one end comes back at the other.')
+  strip('rotate', 'ROTATE', isvel and 'Shift the velocity pattern by whole notes; notes stay where they are.'
+                               or 'Slide the pattern inside the area in steps of its own points; what falls off one end comes back at the other.')
+  if isvel then ImGui.BeginDisabled(ctx) end
   no_switch()
   rv, cfg.snap = ImGui.Checkbox(ctx, 'Snap time to grid', cfg.snap)
   if rv then save_cfg() end
@@ -945,6 +1424,7 @@ local function panel()
       one_shot('shape')
     end
   end
+  if isvel then ImGui.EndDisabled(ctx) end
 
   -- column 2 ------------------------------------------------------------
   ImGui.TableNextColumn(ctx)
@@ -976,7 +1456,9 @@ local function panel()
   ImGui.SeparatorText(ctx, 'ONE CLICK')
   if ImGui.Button(ctx, 'FLIP VALUES') then one_shot('flip') end
   ImGui.SameLine(ctx)
+  if isvel then ImGui.BeginDisabled(ctx) end
   if ImGui.Button(ctx, 'REVERSE') then one_shot('reverse') end
+  if isvel then ImGui.EndDisabled(ctx) end
   ImGui.SameLine(ctx)
   if ImGui.Button(ctx, 'UNDO') then reaper.Main_OnCommand(40029, 0) end
   ImGui.SameLine(ctx)
@@ -985,6 +1467,7 @@ local function panel()
   -- column 3 ------------------------------------------------------------
   ImGui.TableNextColumn(ctx)
   ImGui.SeparatorText(ctx, 'POINTS')
+  if isvel then ImGui.BeginDisabled(ctx) end
   if ImGui.Button(ctx, 'ADD POINTS', SW_W, 0) then one_shot('addpts') end
   ImGui.SetItemTooltip(ctx, 'Fill the target with evenly spaced points on the current line.')
   ImGui.SameLine(ctx)
@@ -993,9 +1476,11 @@ local function panel()
   if rv then save_cfg() end
   if ImGui.Button(ctx, 'REDUCE', SW_W, 0) then one_shot('reduce') end
   ImGui.SetItemTooltip(ctx, 'Remove points the line does not need (after freehand drawing or a recorded knob).')
+  if isvel then ImGui.EndDisabled(ctx) end
   ImGui.SameLine(ctx)
   if ImGui.Button(ctx, 'DESELECT', -1, 0) then deselect_all() end
-  ImGui.SetItemTooltip(ctx, 'Unselect all envelope points on this track (incl. automation items).')
+  ImGui.SetItemTooltip(ctx, src == 'midi' and 'Unselect all events in the MIDI take.'
+                                           or 'Unselect all envelope points on this track (incl. automation items).')
 
   ImGui.SeparatorText(ctx, 'GENERATE')
   if ImGui.Button(ctx, 'GENERATE', SW_W, 0) then one_shot('gen') end

@@ -4,16 +4,15 @@ Free scripts for REAPER by NH4X. Music: https://nh4x.bandcamp.com/
 
 | Tool | What it does | Version |
 |---|---|---|
-| [NH4X Envelope shaper](#nh4x-envelope-shaper) | Panel with drag strips to reshape envelope points: stretch, tilt, scale, warp, rotate, generate | 1.0 |
+| [NH4X Envelope shaper](#nh4x-envelope-shaper) | Panel with drag strips to reshape envelopes and MIDI CC / velocity: stretch, tilt, scale, warp, rotate, generate | 1.1 |
 
 ![NH4X Envelope shaper: razor a bar, generate random steps and a sine, then tilt, rotate and warp it live](envelope-shaper.gif)
 
 ## Contents
 1. [Install](#install)
 2. [NH4X Envelope shaper](#nh4x-envelope-shaper)
-3. [Known limits](#known-limits)
-4. [Changes](#changes)
-5. [License](#license)
+3. [Changes](#changes)
+4. [License](#license)
 
 ## Install
 Do these steps in order, once.
@@ -51,7 +50,7 @@ https://github.com/NH4Xnet/reaper-tools/raw/main/index.xml
 The script now sits in the action list as **Script: NH4X Envelope shaper.lua**.
 
 ## NH4X Envelope shaper
-A panel with drag strips that reshape envelope points while you watch. Drag a strip left or right: the envelope changes live. Let go = one undo step.
+A panel with drag strips that reshape envelope points and MIDI editor lanes while you watch. Drag a strip left or right: the envelope or the CC lane changes live. Let go = one undo step.
 
 ### Start it
 - **Actions > Show action list**, search **NH4X Envelope**, **Run**.
@@ -59,13 +58,23 @@ A panel with drag strips that reshape envelope points while you watch. Drag a st
 - Tip: right-click a toolbar > **Customize toolbar...** > **Add...** and pick the script, or give it a shortcut in the action list.
 
 ### What it edits (TARGET)
-Click an envelope lane first. The **TARGET** line at the top tells you what will be edited:
+The switch **ENVELOPE / MIDI EDITOR** at the top shows what the panel works on. It follows your last click: an envelope lane in the arrange, or a lane in the MIDI editor. Click it to choose by hand. The **TARGET** line below it tells you exactly what will be edited.
+
+**Envelopes:** click an envelope lane first.
 
 1. **Razor area** on the selected envelope: everything inside it. The edges are kept, so the rest of the lane doesn't jump.
 2. Else the **selected points** on the selected envelope.
 3. Else a **selected automation item**: the whole item.
 
 Works on track envelopes, take envelopes and automation items. Pooled automation items: the TARGET line warns you that all copies change.
+
+**MIDI editor:** click a lane in the MIDI editor first (CC, pitch bend, channel pressure or velocity).
+
+1. The **selected events** in that lane (on the velocity lane: the selected notes).
+2. Else everything inside the **time selection**.
+
+- **CC, pitch bend, channel pressure:** everything works like on an envelope. BEND and the shape buttons set the CC curve shapes, snapping uses the MIDI editor grid. One MIDI channel at a time.
+- **Velocity:** the VALUE strips, FLIP, GENERATE and ROTATE. The time controls are grayed out, so your notes never move. GENERATE reads the shape at each note (a chord counts as one step), ROTATE shifts the velocity pattern by whole notes, e.g. to move an accent.
 
 ### Using the strips
 - **Drag** left / right = less / more. The amount shows on the right of the strip.
@@ -79,7 +88,7 @@ Works on track envelopes, take envelopes and automation items. Pooled automation
 - **MOVE**: shift all target points in time.
 - **WARP**: bunch the points towards the start or the end. The edges stay.
 - **ROTATE**: slide the pattern inside the area in steps of its own points. What falls off one end comes back at the other.
-- **Snap time to grid**: STRETCH and MOVE snap to the project grid.
+- **Snap time to grid**: STRETCH and MOVE snap to the project grid (on MIDI lanes: the MIDI editor grid).
 
 ### SHAPE (the line between the points)
 - **BEND**: curve the lines between the points (Bezier). Left = bend down, right = bend up.
@@ -106,19 +115,14 @@ Works on track envelopes, take envelopes and automation items. Pooled automation
 Replaces the target with a shape.
 1. Pick the shape: Ramp up, Ramp down, Swell, Fade, Sine, Triangle, Saw up, Saw down, Square, Random steps, Random smooth.
 2. **Cycles**: how many times the shape repeats inside the target. The random shapes use the POINTS spacing instead.
-3. **Low / High**: the range of the shape. Shown in dB on volume lanes, in the plugin's own units on FX parameter lanes (e.g. Hz on a filter), else in %.
+3. **Low / High**: the range of the shape. Shown in dB on volume lanes, in the plugin's own units on FX parameter lanes (e.g. Hz on a filter), as MIDI values on MIDI lanes, else in %.
 4. Click **GENERATE**.
 
 ### VOLUME LANES
 Sets the top of volume lanes: **0 dB** or **+6 dB** (default). With 0 dB nothing goes above 0 dB: the strips stop there, and a point above 0 dB comes down to 0 dB as soon as a strip moves it. Grayed out when the selected lane isn't a volume lane.
 
-## Known limits
-- One envelope lane at a time.
-- The tempo map and MIDI CC lanes are not supported.
-- Looped automation items are refused: turn Loop off, or trim the item to one pass.
-- Needs ReaImGui 0.10 or newer.
-
 ## Changes
+- **1.1** · MIDI editor lanes: CC, pitch bend, channel pressure and velocity.
 - **1.0** · first public release of the NH4X Envelope shaper.
 
 ## License

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<index version="1" name="NH4X REAPER Tools">
+  <category name="Envelopes">
+    <reapack name="NH4X Envelope shaper.lua" type="script" desc="NH4X Envelope shaper">
+      <metadata>
+        <description><![CDATA[Panel with drag strips to reshape envelope points live. Needs ReaImGui (install it via ReaPack first). Manual: see the README on GitHub.]]></description>
+        <link rel="website" href="https://github.com/NH4Xnet/reaper-tools">GitHub / manual</link>
+        <link rel="website" href="https://nh4x.bandcamp.com/">NH4X music</link>
+      </metadata>
+      <version name="1.0" author="NH4X" time="2026-11-17T12:47:38Z">
+        <source main="main">https://github.com/NH4Xnet/reaper-tools/raw/envelope-shaper-1.0/Envelopes/NH4X%20Envelope%20shaper.lua</source>
+        <changelog><![CDATA[First public release.]]></changelog>
+      </version>
+    </reapack>
+  </category>
+</index>

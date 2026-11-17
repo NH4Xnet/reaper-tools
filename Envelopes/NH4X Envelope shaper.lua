@@ -1256,6 +1256,7 @@ local COL = {
   center = 0x6A7078FF, fill   = 0xE0A030B0, text   = 0xE6E6E6FF,
   value  = 0xFFC860FF, ok     = 0x9ED39EFF, err    = 0xFF8070FF,
   sw_on  = 0xE0A030FF, sw_txt = 0x111111FF, win = 0x1B1D21FF,
+  off_txt = 0x4A4F56FF, off_bd = 0x2C3036FF,                -- disabled strips
 }
 
 local function cancel_drag()
@@ -1315,24 +1316,21 @@ local function strip(op, label, tip)
     drag = nil
   end
 
-  -- draw (greyed out inside BeginDisabled: style alpha is lowered there)
-  local k = ImGui.GetStyleVar(ctx, ImGui.StyleVar_Alpha) or 1
-  local function fade(c)
-    if k >= 1 then return c end
-    return (c & ~0xFF) | math.floor((c & 0xFF) * k)
-  end
+  -- draw; inside BeginDisabled (style alpha lowered) the strip looks clearly dead:
+  -- flat like the window, dark label, dim border, no center line
+  local off = (ImGui.GetStyleVar(ctx, ImGui.StyleVar_Alpha) or 1) < 1
   local dl = ImGui.GetWindowDrawList(ctx)
   local cx = (x1 + x2) * 0.5
-  ImGui.DrawList_AddRectFilled(dl, x1, y1, x2, y2, fade((hovered or active) and COL.bg_hov or COL.bg), 3)
+  ImGui.DrawList_AddRectFilled(dl, x1, y1, x2, y2, off and COL.win or ((hovered or active) and COL.bg_hov or COL.bg), 3)
   local a = (mine and drag and drag.E and not drag.cancelled) and drag.a or 0
   if a ~= 0 then
     local fx = cx + a * (x2 - x1) * 0.5
     ImGui.DrawList_AddRectFilled(dl, math.min(cx, fx), y1 + 3, math.max(cx, fx), y2 - 3, COL.fill, 2)
   end
-  ImGui.DrawList_AddLine(dl, cx, y1 + 2, cx, y2 - 2, fade(COL.center), 1)
-  ImGui.DrawList_AddRect(dl, x1, y1, x2, y2, fade(COL.border), 3)
+  if not off then ImGui.DrawList_AddLine(dl, cx, y1 + 2, cx, y2 - 2, COL.center, 1) end
+  ImGui.DrawList_AddRect(dl, x1, y1, x2, y2, off and COL.off_bd or COL.border, 3)
   local _, th = ImGui.CalcTextSize(ctx, label)
-  ImGui.DrawList_AddText(dl, x1 + 8, y1 + (h - th) * 0.5, fade(COL.text), label)
+  ImGui.DrawList_AddText(dl, x1 + 8, y1 + (h - th) * 0.5, off and COL.off_txt or COL.text, label)
   if a ~= 0 and drag.label then
     local vw = ImGui.CalcTextSize(ctx, drag.label)
     ImGui.DrawList_AddText(dl, x2 - vw - 8, y1 + (h - th) * 0.5, COL.value, drag.label)

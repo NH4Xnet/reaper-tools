@@ -22,7 +22,7 @@ ReaPack is the free package manager for REAPER. Already have it? Go to step 2.
 
 1. Go to https://reapack.com/ and download ReaPack for your system (Windows: `reaper_reapack-x64.dll`).
 2. In REAPER: **Options > Show REAPER resource path in explorer/finder**. Open the folder **UserPlugins** (create it if it's missing) and copy the file in there.
-3. **Close REAPER and start it again.** ReaPack opens its *Manage repositories* window once: that means it works.
+3. **Close REAPER and start it again.** The **Extensions** menu now has a **ReaPack** entry.
 
 ### Step 2 · Install ReaImGui
 The Envelope shaper's panel is built with **ReaImGui**. ReaPack doesn't install it for you, so do it first:
@@ -54,7 +54,7 @@ A panel with drag strips that reshape envelope points and MIDI editor lanes whil
 
 ### Start it
 - **Actions > Show action list**, search **NH4X Envelope**, **Run**.
-- It's a **toggle action**: run it again and the panel closes. On a toolbar button or a controller pad, the button lights up while the panel is open.
+- It's a **toggle action**: run it again and the panel closes. A toolbar button for it lights up while the panel is open.
 - Tip: right-click a toolbar > **Customize toolbar...** > **Add...** and pick the script, or give it a shortcut in the action list.
 
 ### What it edits (TARGET)
@@ -78,9 +78,8 @@ Works on track envelopes, take envelopes and automation items. Pooled automation
 
 ### Using the strips
 - **Drag** left / right = less / more. The amount shows on the right of the strip.
-- **Shift** while dragging = fine, and in between the round values.
+- Strips land on round values (5 % steps, STRETCH in x0.05 steps). **Shift** while dragging = fine control and the values in between.
 - **Esc** while dragging = cancel, everything goes back.
-- Strips land on round values (5 % steps, whole dB). Hold Shift for the values in between.
 - Rest the mouse on a control for a short tip.
 
 ### TIME
@@ -109,12 +108,12 @@ Works on track envelopes, take envelopes and automation items. Pooled automation
 ### POINTS
 - **ADD POINTS**: fill the target with evenly spaced points that sit exactly on the current line, so nothing changes until you shape them. The menu next to it sets the spacing: every grid step, 1/4, 1/8, 1/16 or 1/32.
 - **REDUCE**: remove the points the line doesn't need (after freehand drawing or a recorded knob). Curved points stay.
-- **DESELECT**: unselect all envelope points on this track, automation items included.
+- **DESELECT**: unselect all envelope points on this track, automation items included. In the MIDI editor: all events in the take.
 
 ### GENERATE
 Replaces the target with a shape.
 1. Pick the shape: Ramp up, Ramp down, Swell, Fade, Sine, Triangle, Saw up, Saw down, Square, Random steps, Random smooth.
-2. **Cycles**: how many times the shape repeats inside the target. The random shapes use the POINTS spacing instead.
+2. **Cycles**: how many times the shape repeats inside the target. The random shapes use the POINTS spacing instead (on the velocity lane: one value per note).
 3. **Low / High**: the range of the shape. Shown in dB on volume lanes, in the plugin's own units on FX parameter lanes (e.g. Hz on a filter), as MIDI values on MIDI lanes, else in %.
 4. Click **GENERATE**.
 

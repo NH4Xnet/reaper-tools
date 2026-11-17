@@ -11,7 +11,7 @@
         <source main="main">https://github.com/NH4Xnet/reaper-tools/raw/envelope-shaper-1.0/Envelopes/NH4X%20Envelope%20shaper.lua</source>
         <changelog><![CDATA[First public release.]]></changelog>
       </version>
-      <version name="1.1" author="NH4X" time="2026-11-17T14:12:26Z">
+      <version name="1.1" author="NH4X" time="2026-11-17T14:15:25Z">
         <source main="main">https://github.com/NH4Xnet/reaper-tools/raw/envelope-shaper-1.1/Envelopes/NH4X%20Envelope%20shaper.lua</source>
         <changelog><![CDATA[MIDI editor lanes: CC, pitch bend, channel pressure and velocity.]]></changelog>
       </version>

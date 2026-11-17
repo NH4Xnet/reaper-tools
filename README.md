@@ -54,8 +54,8 @@ A panel with drag strips that reshape automation envelopes and MIDI editor lanes
 
 ### Start it
 - **Actions > Show action list**, search **NH4X Envelope**, **Run**.
-- Run it again to close the panel. A toolbar button for it lights up while the panel is open.
-- Tip: right-click a toolbar > **Customize toolbar...** > **Add...** and pick the script, or give it a shortcut in the action list.
+- To close it: click **×** on the panel, or run the action again.
+- Tip: put it on a toolbar (right-click a toolbar > **Customize toolbar...** > **Add...**, pick the script). The button lights up while the panel is open. Or give it a shortcut in the action list.
 
 ### What it edits
 The **ENVELOPE / MIDI EDITOR** switch at the top shows what the panel works on. It follows your last click; click it to choose by hand. The **TARGET** line below says exactly what the next move will change.

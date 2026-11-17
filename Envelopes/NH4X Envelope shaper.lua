@@ -884,8 +884,8 @@ end
 
 ---------------------------------------------------------------- panel
 -- hardware-style switch left of a strip: all switch blocks share one width so the strips line up
-local SW_W  = 96
-local COL_W = 300   -- width of each of the 3 columns
+local SW_W  = 120
+local COL_W = 324   -- width of each of the 3 columns
 
 local function switch(id, key, labels, tips)
   local n = #labels

@@ -6,6 +6,8 @@ Free scripts for REAPER by NH4X. Music: https://nh4x.bandcamp.com/
 |---|---|---|
 | [NH4X Envelope shaper](#nh4x-envelope-shaper) | Panel with drag strips to reshape envelope points: stretch, tilt, scale, warp, rotate, generate | 1.0 |
 
+![NH4X Envelope shaper: razor a bar, generate random steps and a sine, then tilt, rotate and warp it live](envelope-shaper.gif)
+
 ## Contents
 1. [Install](#install)
 2. [NH4X Envelope shaper](#nh4x-envelope-shaper)

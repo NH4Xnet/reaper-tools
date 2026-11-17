@@ -50,75 +50,72 @@ https://github.com/NH4Xnet/reaper-tools/raw/main/index.xml
 The script now sits in the action list as **Script: NH4X Envelope shaper.lua**.
 
 ## NH4X Envelope shaper
-A panel with drag strips that reshape envelope points and MIDI editor lanes while you watch. Drag a strip left or right: the envelope or the CC lane changes live. Let go = one undo step.
+A panel with drag strips that reshape automation envelopes and MIDI editor lanes while you watch. Drag a strip left or right and the shape changes live. Let go = one undo step.
 
 ### Start it
 - **Actions > Show action list**, search **NH4X Envelope**, **Run**.
-- It's a **toggle action**: run it again and the panel closes. A toolbar button for it lights up while the panel is open.
+- Run it again to close the panel. A toolbar button for it lights up while the panel is open.
 - Tip: right-click a toolbar > **Customize toolbar...** > **Add...** and pick the script, or give it a shortcut in the action list.
 
-### What it edits (TARGET)
-The switch **ENVELOPE / MIDI EDITOR** at the top shows what the panel works on. It follows your last click: an envelope lane in the arrange, or a lane in the MIDI editor. Click it to choose by hand. The **TARGET** line below it tells you exactly what will be edited.
+### What it edits
+The **ENVELOPE / MIDI EDITOR** switch at the top shows what the panel works on. It follows your last click; click it to choose by hand. The **TARGET** line below says exactly what the next move will change.
 
-**Envelopes:** click an envelope lane first.
+**Envelopes** (track envelopes, take envelopes, automation items). Click the envelope lane, then:
 
-1. **Razor area** on the selected envelope: everything inside it. The edges are kept, so the rest of the lane doesn't jump.
-2. Else the **selected points** on the selected envelope.
-3. Else a **selected automation item**: the whole item.
+1. a **razor area** on the lane: everything inside it, or
+2. the **selected points**, or
+3. a **selected automation item**: the whole item.
 
-Works on track envelopes, take envelopes and automation items. Pooled automation items: the TARGET line warns you that all copies change.
+**MIDI editor** (CC, pitch bend, channel pressure, velocity). Click the lane, then:
 
-**MIDI editor:** click a lane in the MIDI editor first (CC, pitch bend, channel pressure or velocity).
+1. the **selected events** (on the velocity lane: the selected notes), or
+2. everything inside the **time selection**.
 
-1. The **selected events** in that lane (on the velocity lane: the selected notes).
-2. Else everything inside the **time selection**.
-
-- **CC, pitch bend, channel pressure:** everything works like on an envelope. BEND and the shape buttons set the CC curve shapes, snapping uses the MIDI editor grid. One MIDI channel at a time.
-- **Velocity:** the VALUE strips, FLIP, GENERATE and ROTATE. The time controls are grayed out, so your notes never move. GENERATE reads the shape at each note (a chord counts as one step), ROTATE shifts the velocity pattern by whole notes, e.g. to move an accent.
+On the velocity lane the panel only changes velocities, so the time controls are grayed out and your notes stay where they are.
 
 ### Using the strips
-- **Drag** left / right = less / more. The amount shows on the right of the strip.
-- Strips land on round values (5 % steps, STRETCH in x0.05 steps). **Shift** while dragging = fine control and the values in between.
-- **Esc** while dragging = cancel, everything goes back.
+- **Drag** left / right = less / more. The amount shows on the strip.
+- **Shift** while dragging = fine control.
+- **Esc** while dragging = cancel.
 - Rest the mouse on a control for a short tip.
 
 ### TIME
 - **STRETCH** with switch **L / R**: squeeze or expand in time. L = the left edge moves, R = the right edge moves.
-- **MOVE**: shift all target points in time.
+- **MOVE**: shift everything in time.
 - **WARP**: bunch the points towards the start or the end. The edges stay.
-- **ROTATE**: slide the pattern inside the area in steps of its own points. What falls off one end comes back at the other.
-- **Snap time to grid**: STRETCH and MOVE snap to the project grid (on MIDI lanes: the MIDI editor grid).
+- **ROTATE**: slide the pattern inside the area; what falls off one end comes back at the other. On the velocity lane it shifts the velocities from note to note, e.g. to move an accent.
+- **Snap time to grid**: STRETCH and MOVE land on the grid.
 
 ### SHAPE (the line between the points)
-- **BEND**: curve the lines between the points (Bezier). Left = bend down, right = bend up.
-- **LINEAR, SQUARE, SLOW S/E, FAST START, FAST END, BEZIER**: one click sets that point shape for the whole target.
+- **BEND**: curve the lines between the points. Left = bend down, right = bend up.
+- **LINEAR, SQUARE, SLOW S/E, FAST START, FAST END, BEZIER**: one click sets that shape for the whole target.
 
 ### VALUE
-- **TILT** with switch **L / R**: lift or lower one side, the other side stays. The menu below picks the tilt curve (Linear, Slow start, Slow end, S-curve), **Steepness** sets how strong the curve is.
-- **SCALE** with switch **LOW / MID / HIGH**: make the movement smaller or bigger. LOW = the lowest point stays, MID = the middle stays (compress / expand), HIGH = the highest point stays.
+- **TILT** with switch **L / R**: lift or lower one side, the other side stays. The menu below picks the tilt curve, **Steepness** how strong it is.
+- **SCALE** with switch **LOW / MID / HIGH**: make the movement smaller or bigger. LOW = the lowest point stays, MID = the middle stays, HIGH = the highest point stays.
 - **MOVE**: shift all values up or down.
 - **WARP**: bend the values towards the low or high end. Lowest and highest point stay.
 - **JITTER**: random variation per point. Every drag rolls a new pattern.
 
 ### ONE CLICK
-- **FLIP VALUES**: upside down (highest becomes lowest).
-- **REVERSE**: backwards in time. The curves are reversed too.
-- **UNDO / REDO**: REAPER's undo, so you don't have to leave the panel.
+- **FLIP VALUES**: upside down.
+- **REVERSE**: backwards in time.
+- **UNDO / REDO**: REAPER's undo, without leaving the panel.
 
 ### POINTS
-- **ADD POINTS**: fill the target with evenly spaced points that sit exactly on the current line, so nothing changes until you shape them. The menu next to it sets the spacing: every grid step, 1/4, 1/8, 1/16 or 1/32.
-- **REDUCE**: remove the points the line doesn't need (after freehand drawing or a recorded knob). Curved points stay.
-- **DESELECT**: unselect all envelope points on this track, automation items included. In the MIDI editor: all events in the take.
+- **ADD POINTS**: fill the target with evenly spaced points on the current line, ready to shape. The menu next to it sets the spacing.
+- **REDUCE**: remove points the line doesn't need, e.g. after freehand drawing or a recorded knob move.
+- **DESELECT**: unselect all points on the track (in the MIDI editor: all events in the take).
 
 ### GENERATE
 Replaces the target with a shape.
-1. Pick the shape: Ramp up, Ramp down, Swell, Fade, Sine, Triangle, Saw up, Saw down, Square, Random steps, Random smooth.
-2. **Cycles**: how many times the shape repeats inside the target. The random shapes use the POINTS spacing instead (on the velocity lane: one value per note).
-3. **Low / High**: the range of the shape. Shown in dB on volume lanes, in the plugin's own units on FX parameter lanes (e.g. Hz on a filter), as MIDI values on MIDI lanes, else in %.
+1. Pick a shape: Ramp up, Ramp down, Swell, Fade, Sine, Triangle, Saw up, Saw down, Square, Random steps, Random smooth.
+2. **Cycles**: how many times the shape repeats. The random shapes step at the POINTS spacing (on the velocity lane: once per note).
+3. **Low / High**: the range. Shown in dB on volume lanes, in the plugin's own units on FX lanes (e.g. Hz), as MIDI values in the MIDI editor, else in %.
 4. Click **GENERATE**.
 
 ### VOLUME LANES
-Sets the top of volume lanes: **0 dB** or **+6 dB** (default). With 0 dB nothing goes above 0 dB: the strips stop there, and a point above 0 dB comes down to 0 dB as soon as a strip moves it. Grayed out when the selected lane isn't a volume lane.
+The top of volume lanes: **0 dB** or **+6 dB** (default). With 0 dB the panel never pushes volume above 0 dB.
 
 ## Changes
 - **1.1** · MIDI editor lanes: CC, pitch bend, channel pressure and velocity.

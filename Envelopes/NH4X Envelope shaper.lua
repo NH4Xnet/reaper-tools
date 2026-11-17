@@ -1256,8 +1256,30 @@ local COL = {
   center = 0x6A7078FF, fill   = 0xE0A030B0, text   = 0xE6E6E6FF,
   value  = 0xFFC860FF, ok     = 0x9ED39EFF, err    = 0xFF8070FF,
   sw_on  = 0xE0A030FF, sw_txt = 0x111111FF, win = 0x1B1D21FF,
-  off_txt = 0x4A4F56FF, off_bd = 0x2C3036FF,                -- disabled strips
+  off_txt = 0x4A4F56FF, off_bd = 0x2C3036FF,                -- disabled controls
+  off_bg  = 0x212429FF, off_on = 0x3A3220FF,                -- disabled button / disabled switch that is on
 }
+
+-- disabled areas: one clear look for every control (ImGui's own fade is too subtle on the dark panel)
+local dimmed = false
+local DIM = {
+  { ImGui.Col_Button, 'off_bg' }, { ImGui.Col_ButtonHovered, 'off_bg' }, { ImGui.Col_ButtonActive, 'off_bg' },
+  { ImGui.Col_FrameBg, 'off_bg' }, { ImGui.Col_FrameBgHovered, 'off_bg' }, { ImGui.Col_FrameBgActive, 'off_bg' },
+  { ImGui.Col_SliderGrab, 'off_bd' }, { ImGui.Col_SliderGrabActive, 'off_bd' }, { ImGui.Col_CheckMark, 'off_txt' },
+  { ImGui.Col_Text, 'off_txt' },
+}
+local function dim_begin()
+  ImGui.PushStyleVar(ctx, ImGui.StyleVar_DisabledAlpha, 1)   -- our colors, no extra fade
+  ImGui.BeginDisabled(ctx)
+  for _, c in ipairs(DIM) do ImGui.PushStyleColor(ctx, c[1], COL[c[2]]) end
+  dimmed = true
+end
+local function dim_end()
+  ImGui.PopStyleColor(ctx, #DIM)
+  ImGui.EndDisabled(ctx)
+  ImGui.PopStyleVar(ctx)
+  dimmed = false
+end
 
 local function cancel_drag()
   if drag and drag.E and not drag.cancelled then
@@ -1316,9 +1338,8 @@ local function strip(op, label, tip)
     drag = nil
   end
 
-  -- draw; inside BeginDisabled (style alpha lowered) the strip looks clearly dead:
-  -- flat like the window, dark label, dim border, no center line
-  local off = (ImGui.GetStyleVar(ctx, ImGui.StyleVar_Alpha) or 1) < 1
+  -- draw; inside dim_begin the strip looks clearly dead: flat like the window, dark label, dim border, no center line
+  local off = dimmed
   local dl = ImGui.GetWindowDrawList(ctx)
   local cx = (x1 + x2) * 0.5
   ImGui.DrawList_AddRectFilled(dl, x1, y1, x2, y2, off and COL.win or ((hovered or active) and COL.bg_hov or COL.bg), 3)
@@ -1348,10 +1369,11 @@ local function switch(id, key, labels, tips)
   local bw = (SW_W - 2 * (n - 1)) / n
   for i, lb in ipairs(labels) do
     local on = (cfg[key] == i - 1)
-    if on then
-      ImGui.PushStyleColor(ctx, ImGui.Col_Button, COL.sw_on)
-      ImGui.PushStyleColor(ctx, ImGui.Col_ButtonHovered, COL.sw_on)
-      ImGui.PushStyleColor(ctx, ImGui.Col_Text, COL.sw_txt)
+    if on then   -- dimmed: dark amber, so you still see the setting but it's clearly off
+      local bg = dimmed and COL.off_on or COL.sw_on
+      ImGui.PushStyleColor(ctx, ImGui.Col_Button, bg)
+      ImGui.PushStyleColor(ctx, ImGui.Col_ButtonHovered, bg)
+      ImGui.PushStyleColor(ctx, ImGui.Col_Text, dimmed and COL.off_txt or COL.sw_txt)
     end
     if ImGui.Button(ctx, lb .. '##' .. id .. i, bw, 24) then cfg[key] = i - 1; save_cfg() end
     if on then ImGui.PopStyleColor(ctx, 3) end
@@ -1395,18 +1417,18 @@ local function panel()
   -- column 1 ------------------------------------------------------------
   ImGui.TableNextColumn(ctx)
   ImGui.SeparatorText(ctx, 'TIME')
-  if isvel then ImGui.BeginDisabled(ctx) end
+  if isvel then dim_begin() end
   switch('st', 'stretch_side', { 'L', 'R' }, { 'Left edge moves, right edge stays.', 'Right edge moves, left edge stays.' })
   strip(cfg.stretch_side == 0 and 'stretchL' or 'stretchR', 'STRETCH', 'Squeeze/expand in time.')
   no_switch()
   strip('movet', 'MOVE', 'Shift all target points in time.')
   no_switch()
   strip('warpt', 'WARP', 'Bunch the points towards the start or end. Edges stay.')
-  if isvel then ImGui.EndDisabled(ctx) end
+  if isvel then dim_end() end
   no_switch()
   strip('rotate', 'ROTATE', isvel and 'Shift the velocity pattern by whole notes; notes stay where they are.'
                                or 'Slide the pattern inside the area in steps of its own points; what falls off one end comes back at the other.')
-  if isvel then ImGui.BeginDisabled(ctx) end
+  if isvel then dim_begin() end
   no_switch()
   rv, cfg.snap = ImGui.Checkbox(ctx, 'Snap time to grid', cfg.snap)
   if rv then save_cfg() end
@@ -1422,7 +1444,7 @@ local function panel()
       one_shot('shape')
     end
   end
-  if isvel then ImGui.EndDisabled(ctx) end
+  if isvel then dim_end() end
 
   -- column 2 ------------------------------------------------------------
   ImGui.TableNextColumn(ctx)
@@ -1435,12 +1457,12 @@ local function panel()
   if rv then save_cfg() end
   ImGui.SetItemTooltip(ctx, 'Tilt curve')
   ImGui.SameLine(ctx)
-  if cfg.curve == 0 then ImGui.BeginDisabled(ctx) end
+  if cfg.curve == 0 then dim_begin() end
   ImGui.SetNextItemWidth(ctx, -1)
   rv, cfg.steep = ImGui.SliderDouble(ctx, '##steep', cfg.steep, 1, 5, 'Steepness %.1f')
   if rv and not ImGui.IsKeyDown(ctx, ImGui.Mod_Shift) then cfg.steep = round_to(cfg.steep, 0.5) end
   if rv then save_cfg() end
-  if cfg.curve == 0 then ImGui.EndDisabled(ctx) end
+  if cfg.curve == 0 then dim_end() end
   switch('sc', 'scale_anchor', { 'LOW', 'MID', 'HIGH' },
          { 'Lowest point stays.', 'Middle stays: compress / expand.', 'Highest point stays.' })
   strip(({ [0] = 'scaleT', 'comp', 'scaleB' })[cfg.scale_anchor] or 'scaleT', 'SCALE', 'Smaller/bigger movement. Switch = what stays put.')
@@ -1454,9 +1476,9 @@ local function panel()
   ImGui.SeparatorText(ctx, 'ONE CLICK')
   if ImGui.Button(ctx, 'FLIP VALUES') then one_shot('flip') end
   ImGui.SameLine(ctx)
-  if isvel then ImGui.BeginDisabled(ctx) end
+  if isvel then dim_begin() end
   if ImGui.Button(ctx, 'REVERSE') then one_shot('reverse') end
-  if isvel then ImGui.EndDisabled(ctx) end
+  if isvel then dim_end() end
   ImGui.SameLine(ctx)
   if ImGui.Button(ctx, 'UNDO') then reaper.Main_OnCommand(40029, 0) end
   ImGui.SameLine(ctx)
@@ -1465,7 +1487,7 @@ local function panel()
   -- column 3 ------------------------------------------------------------
   ImGui.TableNextColumn(ctx)
   ImGui.SeparatorText(ctx, 'POINTS')
-  if isvel then ImGui.BeginDisabled(ctx) end
+  if isvel then dim_begin() end
   if ImGui.Button(ctx, 'ADD POINTS', SW_W, 0) then one_shot('addpts') end
   ImGui.SetItemTooltip(ctx, 'Fill the target with evenly spaced points on the current line.')
   ImGui.SameLine(ctx)
@@ -1474,7 +1496,7 @@ local function panel()
   if rv then save_cfg() end
   if ImGui.Button(ctx, 'REDUCE', SW_W, 0) then one_shot('reduce') end
   ImGui.SetItemTooltip(ctx, 'Remove points the line does not need (after freehand drawing or a recorded knob).')
-  if isvel then ImGui.EndDisabled(ctx) end
+  if isvel then dim_end() end
   ImGui.SameLine(ctx)
   if ImGui.Button(ctx, 'DESELECT', -1, 0) then deselect_all() end
   ImGui.SetItemTooltip(ctx, src == 'midi' and 'Unselect all events in the MIDI take.'
@@ -1488,11 +1510,11 @@ local function panel()
   rv, cfg.gen = ImGui.Combo(ctx, '##gen', cfg.gen, GEN_COMBO)
   if rv then save_cfg() end
   local isrnd, oneshot = cfg.gen >= 9, cfg.gen <= 3
-  if oneshot or isrnd then ImGui.BeginDisabled(ctx) end
+  if oneshot or isrnd then dim_begin() end
   ImGui.SetNextItemWidth(ctx, -1)
   rv, cfg.cycles = ImGui.SliderInt(ctx, '##cycles', cfg.cycles, 1, 32, isrnd and 'Steps = POINTS spacing' or 'Cycles %d')
   if rv then save_cfg() end
-  if oneshot or isrnd then ImGui.EndDisabled(ctx) end
+  if oneshot or isrnd then dim_end() end
   local hw = (ImGui.GetContentRegionAvail(ctx) - 4) / 2
   ImGui.SetNextItemWidth(ctx, hw)
   rv, cfg.lo = ImGui.SliderDouble(ctx, '##lo', cfg.lo, 0, 100, level_fmt('Low', cfg.lo))
@@ -1508,11 +1530,11 @@ local function panel()
 
   ImGui.SeparatorText(ctx, 'VOLUME LANES')
   local novol = not target_vol
-  if novol then ImGui.BeginDisabled(ctx) end
+  if novol then dim_begin() end
   switch('vm', 'vol_max', { '0 dB', '+6 dB' }, { 'Volume lanes top out at 0 dB.', 'Volume lanes top out at +6 dB.' })
   ImGui.AlignTextToFramePadding(ctx)
   ImGui.TextDisabled(ctx, 'Top of the lane')
-  if novol then ImGui.EndDisabled(ctx) end
+  if novol then dim_end() end
 
   ImGui.EndTable(ctx)
   ImGui.Separator(ctx)

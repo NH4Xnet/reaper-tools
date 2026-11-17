@@ -24,15 +24,15 @@ ReaPack is the free package manager for REAPER. Already have it? Go to step 2.
 2. In REAPER: **Options > Show REAPER resource path in explorer/finder**. Open the folder **UserPlugins** (create it if it's missing) and copy the file in there.
 3. **Close REAPER and start it again.** The **Extensions** menu now has a **ReaPack** entry.
 
-### Step 2 · Install ReaImGui
-The Envelope shaper's panel is built with **ReaImGui**. ReaPack doesn't install it for you, so do it first:
+### Step 2 · Install ReaimGui
+The Envelope shaper's panel is built with **ReaimGui**. ReaPack doesn't install it for you, so do it first:
 
 1. **Extensions > ReaPack > Browse packages**.
-2. Type **ReaImGui** into the filter.
-3. Right-click **ReaImGui: ReaScript binding for Dear ImGui** > **Install**, then **Apply**.
+2. Type **ReaimGui** into the filter.
+3. Right-click **ReaimGui: ReaScript binding for Dear ImGui** > **Install**, then **Apply**.
 4. **Restart REAPER.**
 
-(ReaImGui comes from the *ReaTeam Extensions* repository that ReaPack has by default.)
+(ReaimGui comes from the *ReaTeam Extensions* repository that ReaPack has by default.)
 
 ### Step 3 · Add this repository
 1. **Extensions > ReaPack > Import repositories...**

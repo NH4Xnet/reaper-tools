@@ -7,7 +7,7 @@
 --   Envelopes: razor area on the selected envelope, else its selected points, else a selected automation item.
 --   MIDI editor: last clicked CC / pitch bend / channel pressure / velocity lane; selected events, else the time selection.
 --   Drag a strip left/right = live preview, release = one undo step, Esc = cancel, Shift = fine.
---   Toggle action: run again = close. Needs ReaImGui 0.10+ (install it via ReaPack first).
+--   Toggle action: run again = close. Needs ReaimGui 0.10+ (install it via ReaPack first).
 --   Manual: https://github.com/NH4Xnet/reaper-tools
 --   Music: https://nh4x.bandcamp.com/
 

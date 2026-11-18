@@ -5,7 +5,7 @@ Free scripts and plugins for REAPER by NH4X. Add this one repository to ReaPack 
 | Tool | What it does | Version | Manual |
 |---|---|---|---|
 | NH4X Envelope shaper | Panel with drag strips to reshape envelopes and MIDI CC / velocity: stretch, tilt, scale, warp, rotate, generate | 1.1 | [below](#nh4x-envelope-shaper) |
-| NH4X Volca Drum Suite | Editor panel + step sequencer for the Korg volca drum, plus sound and kit actions | panel 2.6.1 · sequencer 1.1.5 | [volca-drum-suite](https://github.com/NH4Xnet/volca-drum-suite) |
+| NH4X Volca Drum Suite | Editor panel + step sequencer for the Korg volca drum, plus sound and kit actions | panel 2.6.2 · sequencer 1.1.6 | [volca-drum-suite](https://github.com/NH4Xnet/volca-drum-suite) |
 
 ![NH4X Envelope shaper: razor a bar, generate random steps and a sine, then tilt, rotate and warp it live](envelope-shaper.gif)
 

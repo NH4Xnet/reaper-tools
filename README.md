@@ -1,10 +1,11 @@
 # NH4X REAPER Tools
 
-Free scripts for REAPER by NH4X. Music: https://nh4x.bandcamp.com/
+Free scripts and plugins for REAPER by NH4X. Add this one repository to ReaPack and install whichever tools you want. Music: https://nh4x.bandcamp.com/
 
-| Tool | What it does | Version |
-|---|---|---|
-| [NH4X Envelope shaper](#nh4x-envelope-shaper) | Panel with drag strips to reshape envelopes and MIDI CC / velocity: stretch, tilt, scale, warp, rotate, generate | 1.1 |
+| Tool | What it does | Version | Manual |
+|---|---|---|---|
+| NH4X Envelope shaper | Panel with drag strips to reshape envelopes and MIDI CC / velocity: stretch, tilt, scale, warp, rotate, generate | 1.1 | [below](#nh4x-envelope-shaper) |
+| NH4X Volca Drum Suite | Editor panel + step sequencer for the Korg volca drum, plus sound and kit actions | panel 2.6.1 · sequencer 1.1.5 | [volca-drum-suite](https://github.com/NH4Xnet/volca-drum-suite) |
 
 ![NH4X Envelope shaper: razor a bar, generate random steps and a sine, then tilt, rotate and warp it live](envelope-shaper.gif)
 
@@ -24,7 +25,7 @@ ReaPack is the free package manager for REAPER. Already have it? Go to step 2.
 2. In REAPER: **Options > Show REAPER resource path in explorer/finder**. Open the folder **UserPlugins** (create it if it's missing) and copy the file in there.
 3. **Close REAPER and start it again.** The **Extensions** menu now has a **ReaPack** entry.
 
-### Step 2 · Install ReaimGui
+### Step 2 · Install ReaimGui (for the Envelope shaper)
 The Envelope shaper's panel is built with **ReaimGui**. ReaPack doesn't install it for you, so do it first:
 
 1. **Extensions > ReaPack > Browse packages**.
@@ -42,12 +43,14 @@ The Envelope shaper's panel is built with **ReaimGui**. ReaPack doesn't install 
 https://github.com/NH4Xnet/reaper-tools/raw/main/index.xml
 ```
 
+This repository also lists the Volca Drum Suite. If you already added the Volca Drum Suite's own repository, keep only one of the two, so the same plugin isn't installed twice.
+
 ### Step 4 · Install the tools
 1. **Extensions > ReaPack > Browse packages**.
 2. Type **NH4X** into the filter.
-3. Right-click **NH4X Envelope shaper** > **Install**, then **Apply**.
+3. Right-click a tool > **Install**, then **Apply**.
 
-The script now sits in the action list as **Script: NH4X Envelope shaper.lua**.
+The Envelope shaper now sits in the action list as **Script: NH4X Envelope shaper.lua**. The Volca Drum Suite needs a few more setup steps: see its manual (link in the table above).
 
 ## NH4X Envelope shaper
 A panel with drag strips that reshape automation envelopes and MIDI editor lanes while you watch. Drag a strip left or right and the shape changes live. Let go = one undo step.
